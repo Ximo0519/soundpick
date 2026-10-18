@@ -93,6 +93,7 @@ export interface MusicRecord {
   failReason?: string | null;
   audioUrl?: string | null;
   generationGroup?: string | null;
+  sunoId?: string | null;
   createdAt: string;
 }
 
@@ -130,10 +131,12 @@ export const authApi = {
 
 export const musicApi = {
   generate: (payload: {
-    prompt: string;
+    prompt?: string;
     style?: string;
     mood?: string;
     instrumental?: boolean;
+    taskType?: 'extend' | 'cover';
+    referenceClipId?: string;
   }) =>
     api.post<{
       groupId: string;

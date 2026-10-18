@@ -61,7 +61,7 @@ export default function Home({ onNavigate }: HomeProps) {
   const toTrack = useCallback((r: {
     id: string; title: string; description: string; audioUrl?: string | null;
     tags: string; mood: string; prompt: string; createdAt: string;
-    duration?: number | null;
+    duration?: number | null; sunoId?: string | null;
   }): MusicTrack => ({
     id: r.id,
     title: r.title,
@@ -71,6 +71,7 @@ export default function Home({ onNavigate }: HomeProps) {
     mood: r.mood,
     duration: r.duration ?? 0,
     prompt: r.prompt,
+    sunoId: r.sunoId ?? null,
     createdAt: r.createdAt,
   }), []);
 
@@ -256,6 +257,39 @@ export default function Home({ onNavigate }: HomeProps) {
       setSharing(false);
     }
   }, [shareTrack, shareDesc]);
+
+  /** 延长 / 翻唱：基于已有音乐的 sunoId 生成新版本 */
+  const handleExtendCover = useCallback(async (track: MusicTrack, taskType: 'extend' | 'cover') => {
+    if (!track.sunoId) {
+      toast.error('该音乐缺少 Suno 标识，无法延长/翻唱');
+      return;
+    }
+    if (quotaRemaining <= 0) {
+      toast.error('今日生成额度已用完，明天再来吧');
+      return;
+    }
+    setGenerating(true);
+    setProgress(5);
+    setPhase(taskType === 'extend' ? '正在续写音乐...' : '正在翻唱音乐...');
+    setVersions([]);
+
+    try {
+      const { groupId: gid, versions: recs } = await musicApi.generate({
+        taskType,
+        referenceClipId: track.sunoId,
+        instrumental: true,
+      });
+      setVersions(recs.map(toTrack));
+      setProgress(20);
+      setPhase('Suno 正在处理，请耐心等待...');
+      refreshUser();
+      pollGroup(gid);
+    } catch (err) {
+      setGenerating(false);
+      setProgress(0);
+      toast.error(err instanceof Error ? err.message : '操作失败');
+    }
+  }, [quotaRemaining, refreshUser, pollGroup, toTrack]);
 
   return (
     <div className="grain max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
@@ -493,9 +527,37 @@ export default function Home({ onNavigate }: HomeProps) {
                         <p className="text-xs index-no" style={{ color: 'var(--sp-ink-dim)' }}>Suno 谱曲中…</p>
                       </div>
                     )}
-                    {/* 分享 */}
+                    {/* 操作按钮：延长 / 翻唱 / 分享 */}
                     {track.audioUrl && (
-                      <div className="flex justify-end mt-3">
+                      <div className="flex justify-end gap-2 mt-3">
+                        <button
+                          onClick={() => handleExtendCover(track, 'extend')}
+                          disabled={generating}
+                          className="text-xs px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                          style={{ border: '1px solid var(--sp-line)', color: 'var(--sp-ink-dim)' }}
+                          onMouseEnter={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.color = 'var(--sp-accent)'; }}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--sp-ink-dim)')}
+                          title="基于此音频续写更长版本"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                          </svg>
+                          延长
+                        </button>
+                        <button
+                          onClick={() => handleExtendCover(track, 'cover')}
+                          disabled={generating}
+                          className="text-xs px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                          style={{ border: '1px solid var(--sp-line)', color: 'var(--sp-ink-dim)' }}
+                          onMouseEnter={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.color = 'var(--sp-accent)'; }}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--sp-ink-dim)')}
+                          title="基于此音频翻唱"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                          </svg>
+                          翻唱
+                        </button>
                         <button
                           onClick={() => setShareTrack(track)}
                           className="text-xs px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5"

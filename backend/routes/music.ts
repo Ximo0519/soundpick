@@ -203,6 +203,7 @@ function toClient(r: typeof music.$inferSelect) {
     failReason: r.failReason,
     audioUrl: r.audioUrl,
     generationGroup: r.generationGroup,
+    sunoId: r.sunoId,
     createdAt: r.createdAt,
   };
 }
@@ -222,8 +223,15 @@ router.post('/generate', requireAuth, async (req: Request, res: Response) => {
       });
     }
 
-    const { prompt, style, mood, instrumental } = req.body;
-    if (!prompt || !String(prompt).trim()) {
+    const { prompt, style, mood, instrumental, taskType, referenceClipId } = req.body;
+    const isExtendOrCover = taskType === 'extend' || taskType === 'cover';
+
+    // 延长/翻唱模式需要参考音频的 custom_id
+    if (isExtendOrCover && !referenceClipId) {
+      return res.status(400).json({ success: false, error: '延长/翻唱需要参考音频' });
+    }
+    // 普通模式必须有描述
+    if (!isExtendOrCover && (!prompt || !String(prompt).trim())) {
       return res.status(400).json({ success: false, error: '请输入音乐描述' });
     }
 
@@ -234,25 +242,29 @@ router.post('/generate', requireAuth, async (req: Request, res: Response) => {
         .json({ success: false, error: '今日生成次数已用完，明天再来吧' });
     }
 
-    // DeepSeek 润色
+    // DeepSeek 润色（延长/翻唱模式跳过，直接用原始描述）
     let title = '未命名音乐';
-    let sunoPrompt = String(prompt).trim();
+    let sunoPrompt = String(prompt || '').trim();
     let tags = String(style || '');
     let actualMood = String(mood || '');
     let polishFailed = false;
-    try {
-      const optimized = await optimizePrompt(
-        String(prompt).trim(),
-        String(style || ''),
-        String(mood || ''),
-      );
-      title = optimized.title;
-      sunoPrompt = optimized.sunoPrompt;
-      tags = optimized.tags;
-      actualMood = optimized.mood;
-    } catch (err) {
-      polishFailed = true;
-      console.warn('[music] DeepSeek 润色失败，使用原始描述:', err);
+    if (!isExtendOrCover) {
+      try {
+        const optimized = await optimizePrompt(
+          String(prompt).trim(),
+          String(style || ''),
+          String(mood || ''),
+        );
+        title = optimized.title;
+        sunoPrompt = optimized.sunoPrompt;
+        tags = optimized.tags;
+        actualMood = optimized.mood;
+      } catch (err) {
+        polishFailed = true;
+        console.warn('[music] DeepSeek 润色失败，使用原始描述:', err);
+      }
+    } else {
+      title = taskType === 'extend' ? '续写音乐' : '翻唱音乐';
     }
 
     // 提交 Suno → 两个 task_id
@@ -260,6 +272,8 @@ router.post('/generate', requireAuth, async (req: Request, res: Response) => {
       prompt: sunoPrompt,
       title,
       instrumental: instrumental !== false,
+      taskType: isExtendOrCover ? taskType : undefined,
+      referenceClipId: isExtendOrCover ? String(referenceClipId) : undefined,
     });
 
     // 扣配额 + 生成分组 UUID

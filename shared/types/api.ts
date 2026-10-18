@@ -15,6 +15,7 @@ export interface MusicTrack {
   mood: string;
   duration: number;
   prompt: string;
+  sunoId?: string | null;
   createdAt: string;
 }
 
