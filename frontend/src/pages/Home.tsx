@@ -96,6 +96,15 @@ export default function Home({ onNavigate }: HomeProps) {
     };
   }, [loadRecent]);
 
+  // 人声开关智能联动：prompt 含人声相关关键词时自动点亮，否则关闭
+  // 仅在 prompt 变化时联动，用户手动点开关不触发 prompt 变化，不会被覆盖
+  useEffect(() => {
+    const text = prompt.toLowerCase();
+    const vocalKeywords = ['人声', '演唱', '唱歌', '主唱', '歌声', 'vocal', 'vocals', 'rap', '说唱', '歌词', '吟唱', '歌手', '副歌'];
+    const hasVocal = vocalKeywords.some((k) => text.includes(k));
+    setWithVocal(hasVocal);
+  }, [prompt]);
+
   /** 轮询 group 直到两条版本都完成/失败 */
   const pollGroup = useCallback((gid: string) => {
     const startedAt = Date.now();
@@ -367,7 +376,8 @@ export default function Home({ onNavigate }: HomeProps) {
                   <label className="index-no block mb-2">VOCAL · 人声</label>
                   <button
                     onClick={() => setWithVocal(!withVocal)}
-                    className="w-full rounded-sm p-2.5 text-sm transition-colors text-left"
+                    className="w-full rounded-sm p-2.5 text-sm transition-colors text-left relative"
+                    title="根据描述自动检测，可手动覆盖"
                     style={{
                       background: 'var(--sp-surface-2)',
                       border: withVocal ? '1px solid var(--sp-accent)' : '1px solid var(--sp-line)',
@@ -375,6 +385,7 @@ export default function Home({ onNavigate }: HomeProps) {
                     }}
                   >
                     {withVocal ? '♪ 包含人声' : '纯音乐（无人声）'}
+                    <span className="index-no absolute right-2 top-1/2 -translate-y-1/2 text-[9px] opacity-50">AUTO</span>
                   </button>
                 </div>
               </div>
