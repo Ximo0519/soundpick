@@ -22,13 +22,14 @@ async function optimizePrompt(
   prompt: string,
   style: string,
   mood: string,
-): Promise<{ title: string; sunoPrompt: string; tags: string }> {
+): Promise<{ title: string; sunoPrompt: string; tags: string; mood: string }> {
   const ai = createAIService();
   const systemPrompt = `You are a professional Suno AI music prompt engineer. Based on the user's Chinese music description, produce:
 1. "title": a poetic Chinese music title (2-8 characters)
 2. "sunoPrompt": a vivid English music prompt for Suno (1-3 sentences, describing genre, instruments, tempo, atmosphere)
 3. "tags": comma-separated English style tags (3-6 tags, e.g. "lofi, jazz, piano, relaxing")
-Respond ONLY with JSON: {"title":"...","sunoPrompt":"...","tags":"..."}`;
+4. "mood": the actual mood of this music in Chinese (one word, e.g. 欢快/平静/悲伤/激昂/神秘/温馨)
+Respond ONLY with JSON: {"title":"...","sunoPrompt":"...","tags":"...","mood":"..."}`;
 
   const userMessage = `描述: ${prompt}\n风格: ${style || '不限'}\n情绪: ${mood || '不限'}`;
 
@@ -41,12 +42,13 @@ Respond ONLY with JSON: {"title":"...","sunoPrompt":"...","tags":"..."}`;
         title: parsed.title || '未命名音乐',
         sunoPrompt: parsed.sunoPrompt || prompt,
         tags: parsed.tags || style || '',
+        mood: parsed.mood || mood || '',
       };
     }
   } catch {
     // 解析失败走兜底
   }
-  return { title: '未命名音乐', sunoPrompt: prompt, tags: style || '' };
+  return { title: '未命名音乐', sunoPrompt: prompt, tags: style || '', mood: mood || '' };
 }
 
 /**
@@ -236,6 +238,7 @@ router.post('/generate', requireAuth, async (req: Request, res: Response) => {
     let title = '未命名音乐';
     let sunoPrompt = String(prompt).trim();
     let tags = String(style || '');
+    let actualMood = String(mood || '');
     let polishFailed = false;
     try {
       const optimized = await optimizePrompt(
@@ -246,6 +249,7 @@ router.post('/generate', requireAuth, async (req: Request, res: Response) => {
       title = optimized.title;
       sunoPrompt = optimized.sunoPrompt;
       tags = optimized.tags;
+      actualMood = optimized.mood;
     } catch (err) {
       polishFailed = true;
       console.warn('[music] DeepSeek 润色失败，使用原始描述:', err);
@@ -275,7 +279,7 @@ router.post('/generate', requireAuth, async (req: Request, res: Response) => {
       prompt: String(prompt).trim(),
       optimizedPrompt: sunoPrompt,
       tags,
-      mood: String(mood || ''),
+      mood: actualMood,
       instrumental: instrumental === false ? 0 : 1,
       status: 'generating' as const,
       generationGroup: groupId,

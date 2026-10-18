@@ -89,12 +89,12 @@ export default function AudioPlayer({ track, onDownload }: AudioPlayerProps) {
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
-  const styleLabels: Record<string, string> = {
-    pop: '流行', classical: '古典', electronic: '电子', jazz: '爵士', folk: '民谣',
-  };
-  const moodLabels: Record<string, string> = {
-    happy: '欢快', calm: '平静', sad: '悲伤', energetic: '激昂',
-  };
+  // AI 返回的实际风格标签（英文逗号分隔），格式化展示
+  const styleTags = track.style
+    ? track.style.split(',').map((s) => s.trim()).filter(Boolean).join(' · ')
+    : '—';
+  // mood 现在是 AI 判断的实际中文情绪
+  const moodText = track.mood || '—';
 
   return (
     <div className="surface rounded-md p-6 md:p-8" style={{ border: '1px solid var(--sp-line)' }}>
@@ -142,8 +142,8 @@ export default function AudioPlayer({ track, onDownload }: AudioPlayerProps) {
         <div className="flex-grow w-full min-w-0">
           <div className="flex justify-between items-start gap-3">
             <div className="flex items-center gap-3 flex-wrap">
-              <span className="index-no">STYLE · {styleLabels[track.style] || track.style}</span>
-              <span className="index-no">MOOD · {moodLabels[track.mood] || track.mood}</span>
+              <span className="index-no">STYLE · {styleTags}</span>
+              <span className="index-no">MOOD · {moodText}</span>
             </div>
             <button
               onClick={onDownload}
