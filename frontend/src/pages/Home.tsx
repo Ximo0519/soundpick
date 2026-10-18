@@ -43,7 +43,7 @@ export default function Home({ onNavigate }: HomeProps) {
   const [progress, setProgress] = useState(0);
   const [phase, setPhase] = useState('');
 
-  const [currentTrack, setCurrentTrack] = useState<MusicTrack | null>(null);
+  const [versions, setVersions] = useState<MusicTrack[]>([]);
   const [recent, setRecent] = useState<MusicTrack[]>([]);
 
   // AI 润色预览
@@ -96,32 +96,41 @@ export default function Home({ onNavigate }: HomeProps) {
     };
   }, [loadRecent]);
 
-  /** 轮询单条记录状态直到完成/失败 */
-  const pollStatus = useCallback((musicId: string) => {
+  /** 轮询 group 直到两条版本都完成/失败 */
+  const pollGroup = useCallback((gid: string) => {
     const startedAt = Date.now();
     if (pollTimer.current) clearInterval(pollTimer.current);
 
     pollTimer.current = setInterval(async () => {
       try {
-        const record = await musicApi.detail(musicId);
-        if (record.status === 'completed') {
+        const records = await musicApi.groupQuery(gid);
+        const tracks = records.map(toTrack);
+        // 任何一条完成就先展示，提升感知速度
+        setVersions((prev) => {
+          if (prev.length === tracks.length) return prev;
+          return tracks;
+        });
+
+        const allDone = records.every((r) => r.status === 'completed' || r.status === 'failed');
+        if (allDone) {
           if (pollTimer.current) clearInterval(pollTimer.current);
           setGenerating(false);
-          setProgress(100);
-          setCurrentTrack(toTrack(record));
-          setRecent((prev) => [toTrack(record), ...prev].slice(0, 5));
-          refreshUser();
-          toast.success(`「${record.title}」生成完成！`);
-        } else if (record.status === 'failed') {
-          if (pollTimer.current) clearInterval(pollTimer.current);
-          setGenerating(false);
-          setProgress(0);
-          refreshUser();
-          toast.error(record.failReason || '生成失败，请调整描述后重试');
+          setVersions(tracks);
+          const completed = tracks.filter((_, i) => records[i].status === 'completed');
+          if (completed.length > 0) {
+            setProgress(100);
+            setRecent((prev) => [...completed, ...prev].slice(0, 5));
+            refreshUser();
+            toast.success(`生成完成：${completed.length} 个版本已就绪`);
+          } else {
+            const failReason = records.find((r) => r.status === 'failed')?.failReason;
+            refreshUser();
+            toast.error(failReason || '生成失败，请调整描述后重试');
+          }
         } else if (Date.now() - startedAt > POLL_TIMEOUT) {
           if (pollTimer.current) clearInterval(pollTimer.current);
           setGenerating(false);
-          setProgress(0);
+          setVersions(tracks);
           toast.error('生成超时，可稍后在音乐库查看结果');
         }
       } catch {
@@ -143,7 +152,7 @@ export default function Home({ onNavigate }: HomeProps) {
     setGenerating(true);
     setProgress(5);
     setPhase('DeepSeek 润色提示词中...');
-    setCurrentTrack(null);
+    setVersions([]);
     setOptimized(null);
 
     // 模拟进度（真实生成 30s-2min）
@@ -153,7 +162,7 @@ export default function Home({ onNavigate }: HomeProps) {
     setTimeout(() => setPhase('Suno 谱曲中，请耐心等待...'), 6000);
 
     try {
-      const { versions, polishFailed } = await musicApi.generate({
+      const { groupId: gid, versions: recs, polishFailed } = await musicApi.generate({
         prompt: prompt.trim(),
         style: selectedStyle,
         mood,
@@ -162,18 +171,19 @@ export default function Home({ onNavigate }: HomeProps) {
       if (polishFailed) {
         toast.warning('AI 润色未生效（参数可能较简单），将使用原始描述生成');
       }
+      setVersions(recs.map(toTrack));
       setProgress((prev) => Math.max(prev, 20));
       setPhase('已提交生成任务，Suno 正在谱曲...');
       refreshUser();
-      // 两条版本并行生成，轮询第一条即可（任何一条完成都会在音乐库可见）
-      pollStatus(versions[0].id);
+      // 轮询 group，两条版本各自完成后展示
+      pollGroup(gid);
     } catch (err) {
       clearInterval(progressTimer);
       setGenerating(false);
       setProgress(0);
       toast.error(err instanceof Error ? err.message : '发起生成失败');
     }
-  }, [prompt, selectedStyle, mood, withVocal, quotaRemaining, refreshUser, pollStatus]);
+  }, [prompt, selectedStyle, mood, withVocal, quotaRemaining, refreshUser, pollGroup]);
 
   // 进度条计时器在 generating 结束后清理
   useEffect(() => {
@@ -205,20 +215,20 @@ export default function Home({ onNavigate }: HomeProps) {
     }
   }, [prompt, selectedStyle, mood]);
 
-  const handleDownload = useCallback(async () => {
-    if (!currentTrack) return;
+  const handleDownload = useCallback(async (track: MusicTrack) => {
+    if (!track) return;
     try {
-      const { url } = await musicApi.downloadUrl(currentTrack.id);
+      const { url } = await musicApi.downloadUrl(track.id);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${currentTrack.title}.mp3`;
+      a.download = `${track.title}.mp3`;
       a.target = '_blank';
       a.click();
       toast.success('开始下载...');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '获取下载链接失败');
     }
-  }, [currentTrack]);
+  }, []);
 
   const handleShare = useCallback(async () => {
     if (!shareTrack) return;
@@ -422,22 +432,70 @@ export default function Home({ onNavigate }: HomeProps) {
 
         {/* 右侧结果 */}
         <div className="lg:col-span-7 space-y-6">
-          {currentTrack ? (
-            <div className="space-y-3 reveal-up" style={{ ['--stagger' as any]: 2 }}>
-              <AudioPlayer track={currentTrack} onDownload={handleDownload} />
-              <div className="flex justify-end">
-                <button
-                  onClick={() => setShareTrack(currentTrack)}
-                  className="px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2"
-                  style={{ border: '1px solid var(--sp-line)', color: 'var(--sp-ink-dim)' }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--sp-accent)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--sp-ink-dim)')}
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
-                  </svg>
-                  分享到广场
-                </button>
+          {versions.length > 0 ? (
+            <div className="reveal-up" style={{ ['--stagger' as any]: 2 }}>
+              <div className="flex items-baseline justify-between mb-3">
+                <h3 className="font-display text-lg" style={{ color: 'var(--sp-ink)' }}>
+                  {versions.length === 1 ? '生成结果' : `生成结果 · ${versions.length} 个版本`}
+                </h3>
+                {versions.some((v) => !v.audioUrl) && (
+                  <span className="index-no" style={{ color: 'var(--sp-accent)' }}>生成中…</span>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {versions.map((track, idx) => (
+                  <div
+                    key={track.id}
+                    className="surface rounded-md p-4 flex flex-col"
+                    style={{ border: '1px solid var(--sp-line)' }}
+                  >
+                    {/* 版本头 */}
+                    <div className="flex items-center gap-3 mb-3">
+                      <div
+                        className="w-12 h-12 rounded-sm overflow-hidden flex-shrink-0"
+                        style={{ border: '1px solid var(--sp-line)' }}
+                      >
+                        <CoverArt seed={track.title + idx} size={48} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="index-no block">V{idx + 1}</span>
+                        <p className="font-display truncate" style={{ color: 'var(--sp-ink)' }}>{track.title}</p>
+                      </div>
+                    </div>
+                    {/* 播放器或生成中 */}
+                    {track.audioUrl ? (
+                      <AudioPlayer track={track} onDownload={() => handleDownload(track)} />
+                    ) : (
+                      <div
+                        className="rounded-sm p-6 flex flex-col items-center justify-center text-center"
+                        style={{ background: 'var(--sp-surface-2)', border: '1px dashed var(--sp-line)' }}
+                      >
+                        <svg className="w-6 h-6 animate-spin mb-2" style={{ color: 'var(--sp-accent)' }} fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        <p className="text-xs index-no" style={{ color: 'var(--sp-ink-dim)' }}>Suno 谱曲中…</p>
+                      </div>
+                    )}
+                    {/* 分享 */}
+                    {track.audioUrl && (
+                      <div className="flex justify-end mt-3">
+                        <button
+                          onClick={() => setShareTrack(track)}
+                          className="text-xs px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5"
+                          style={{ border: '1px solid var(--sp-line)', color: 'var(--sp-ink-dim)' }}
+                          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--sp-accent)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--sp-ink-dim)')}
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
+                          </svg>
+                          分享
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           ) : (
@@ -454,7 +512,7 @@ export default function Home({ onNavigate }: HomeProps) {
                 </svg>
               </div>
               <p className="font-medium" style={{ color: 'var(--sp-ink)' }}>输入描述并点击「立即生成」</p>
-              <p className="text-sm mt-1" style={{ color: 'var(--sp-ink-dim)' }}>生成完成后可下载、分享到广场</p>
+              <p className="text-sm mt-1" style={{ color: 'var(--sp-ink-dim)' }}>每次生成 2 个版本，可对比后下载或分享</p>
             </div>
           )}
 
@@ -485,7 +543,7 @@ export default function Home({ onNavigate }: HomeProps) {
                     style={{ borderTop: idx === 0 ? 'none' : '1px solid var(--sp-line-subtle)' }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--sp-surface-2)')}
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                    onClick={() => setCurrentTrack(track)}
+                    onClick={() => setVersions([track])}
                   >
                     <div
                       className="w-16 h-16 rounded-sm overflow-hidden flex-shrink-0"
