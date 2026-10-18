@@ -42,6 +42,10 @@ export default function Home({ onNavigate }: HomeProps) {
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [phase, setPhase] = useState('');
+  const [elapsed, setElapsed] = useState(0); // 已用秒数，用于预估剩余时间
+
+  /** Suno 平均生成时长（秒），用于预估剩余时间 */
+  const ESTIMATED_DURATION = 90;
 
   const [versions, setVersions] = useState<MusicTrack[]>([]);
   const [recent, setRecent] = useState<MusicTrack[]>([]);
@@ -161,6 +165,7 @@ export default function Home({ onNavigate }: HomeProps) {
 
     setGenerating(true);
     setProgress(5);
+    setElapsed(0);
     setPhase('DeepSeek 润色提示词中...');
     setVersions([]);
     setOptimized(null);
@@ -200,6 +205,7 @@ export default function Home({ onNavigate }: HomeProps) {
     if (!generating) return;
     const timer = setInterval(() => {
       setProgress((prev) => Math.min(prev + Math.random() * 3, 95));
+      setElapsed((prev) => prev + 1);
     }, 1500);
     return () => clearInterval(timer);
   }, [generating]);
@@ -270,6 +276,7 @@ export default function Home({ onNavigate }: HomeProps) {
     }
     setGenerating(true);
     setProgress(5);
+    setElapsed(0);
     setPhase(taskType === 'extend' ? '正在续写音乐...' : '正在翻唱音乐...');
     setVersions([]);
 
@@ -457,15 +464,20 @@ export default function Home({ onNavigate }: HomeProps) {
               {/* Progress */}
               {generating && (
                 <div className="space-y-2">
-                  <div className="relative h-px w-full overflow-hidden" style={{ background: 'var(--sp-line)' }}>
+                  <div className="relative h-1 w-full rounded-full overflow-hidden" style={{ background: 'var(--sp-line)' }}>
                     <div
-                      className="absolute left-0 top-0 h-full transition-all duration-700"
+                      className="absolute left-0 top-0 h-full rounded-full transition-all duration-700"
                       style={{ width: `${progress}%`, background: 'var(--sp-accent)' }}
                     />
                   </div>
-                  <p className="index-no text-center">
-                    PHASE {phase.includes('Suno') ? '02' : phase.includes('已提交') ? '03' : '01'} · {phase || '准备中...'}（通常需要 1-2 分钟）
-                  </p>
+                  <div className="flex justify-between items-center">
+                    <p className="index-no text-xs">
+                      PHASE {phase.includes('Suno') ? '02' : phase.includes('已提交') || phase.includes('正在') ? '03' : '01'} · {phase || '准备中...'}
+                    </p>
+                    <p className="index-no text-xs" style={{ color: 'var(--sp-ink-dim)' }}>
+                      {Math.round(progress)}% · 预估剩余 {Math.max(0, ESTIMATED_DURATION - elapsed)}s
+                    </p>
+                  </div>
                 </div>
               )}
 
