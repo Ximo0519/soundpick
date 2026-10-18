@@ -306,11 +306,16 @@ export default function Home({ onNavigate }: HomeProps) {
                   <button
                     onClick={handleOptimize}
                     disabled={optimizing || generating}
-                    className="text-xs px-2.5 py-1 rounded-sm transition-colors disabled:opacity-50"
-                    style={{ border: '1px solid var(--sp-line)', color: 'var(--sp-ink-dim)' }}
-                    onMouseEnter={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.color = 'var(--sp-accent)'; }}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--sp-ink-dim)')}
+                    className="text-xs px-3 py-1.5 rounded-md font-medium transition-all disabled:opacity-50 flex items-center gap-1 hover:-translate-y-0.5"
+                    style={{
+                      background: 'var(--sp-accent)',
+                      color: '#14120E',
+                      boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
+                    }}
                   >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
                     {optimizing ? '润色中...' : 'AI 润色'}
                   </button>
                 </div>
@@ -376,16 +381,16 @@ export default function Home({ onNavigate }: HomeProps) {
                   <label className="index-no block mb-2">VOCAL · 人声</label>
                   <button
                     onClick={() => setWithVocal(!withVocal)}
-                    className="w-full rounded-sm p-2.5 text-sm transition-colors text-left relative"
+                    className="w-full rounded-sm p-2.5 text-sm transition-all text-left relative font-medium"
                     title="根据描述自动检测，可手动覆盖"
                     style={{
-                      background: 'var(--sp-surface-2)',
+                      background: withVocal ? 'var(--sp-accent)' : 'var(--sp-surface-2)',
                       border: withVocal ? '1px solid var(--sp-accent)' : '1px solid var(--sp-line)',
-                      color: withVocal ? 'var(--sp-accent)' : 'var(--sp-ink-dim)',
+                      color: withVocal ? '#14120E' : 'var(--sp-ink-dim)',
                     }}
                   >
                     {withVocal ? '♪ 包含人声' : '纯音乐（无人声）'}
-                    <span className="index-no absolute right-2 top-1/2 -translate-y-1/2 text-[9px] opacity-50">AUTO</span>
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] opacity-60" style={{ color: withVocal ? '#14120E' : 'var(--sp-ink-ghost)' }}>AUTO</span>
                   </button>
                 </div>
               </div>
