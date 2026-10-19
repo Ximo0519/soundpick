@@ -504,7 +504,7 @@ export default function Home({ onNavigate }: HomeProps) {
                   <span className="index-no" style={{ color: 'var(--sp-accent)' }}>生成中…</span>
                 )}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-5">
                 {versions.map((track, idx) => (
                   <div
                     key={track.id}
